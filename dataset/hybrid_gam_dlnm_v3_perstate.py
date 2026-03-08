@@ -262,72 +262,116 @@ for state in ['NSW', 'VIC', 'QLD']:
 # ============================================================
 print("\n--- Generating Per-State Plots ---")
 
-colors = {'NSW': '#e74c3c', 'VIC': '#3498db', 'QLD': '#2ecc71'}
-fig = plt.figure(figsize=(22, 28))
-fig.suptitle('Hybrid GAM-DLNM v3 — Per-State Models (Australia 2015–2024)',
-             fontsize=18, fontweight='bold', y=0.995)
+from scipy.stats import pearsonr, spearmanr
 
+colors = {'NSW': '#e74c3c', 'VIC': '#3498db', 'QLD': '#2ecc71'}
+fig = plt.figure(figsize=(24, 42))
+fig.suptitle('Hybrid GAM-DLNM v3 — Per-State Models (Australia 2015–2024)',
+             fontsize=20, fontweight='bold', y=0.998)
+
+# ── Row 1: Time-series per state ──
 for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
     r = results[state]
-
-    # ── Row: Time-series ──
-    ax_ts = fig.add_subplot(5, 3, idx + 1)
+    ax_ts = fig.add_subplot(8, 3, idx + 1)
     dates_all = pd.to_datetime(r['dates'])
     ax_ts.plot(dates_all, r['y'], color=colors[state], alpha=0.35, lw=0.8, label='Actual')
     ax_ts.plot(dates_all, r['y_pred_all'], color=colors[state], lw=1.5, label='Predicted')
     ax_ts.fill_between(dates_all, r['y'], r['y_pred_all'], alpha=0.08, color=colors[state])
     split_date = dates_all[r['split']]
     ax_ts.axvline(split_date, color='gray', ls='--', alpha=0.7, label='Train|Test')
-    ax_ts.set_title(f'{state} — Time Series', fontsize=13, fontweight='bold')
+    pop = df[df['State'] == state]['Population'].iloc[0]
+    ax_ts.set_title(f'{state} — Time Series (Pop: {pop:,.0f})', fontsize=13, fontweight='bold')
     ax_ts.set_ylabel('Deaths/week')
     ax_ts.legend(fontsize=7, loc='upper left')
+    pr_all, _ = pearsonr(r['y'], r['y_pred_all'])
     info = (f"Train R²={r['r2_train']:.4f}\n"
             f"Test  R²={r['r2_test']:.4f}\n"
             f"MAE={r['mae_test']:.1f}\n"
             f"RMSE={r['rmse_test']:.1f}\n"
-            f"MAPE={r['mape_test']:.1f}%")
+            f"MAPE={r['mape_test']:.1f}%\n"
+            f"r={pr_all:.4f}")
     ax_ts.text(0.98, 0.02, info, transform=ax_ts.transAxes, fontsize=8,
                va='bottom', ha='right', fontfamily='monospace',
                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.85))
 
-    # ── Row: Actual vs Predicted scatter ──
-    ax_sc = fig.add_subplot(5, 3, idx + 4)
-    ax_sc.scatter(r['y_test'], r['y_pred_test'], s=25, alpha=0.6,
-                  color=colors[state], edgecolors='none')
+# ── Row 2: Actual vs Predicted scatter ──
+for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
+    r = results[state]
+    ax_sc = fig.add_subplot(8, 3, idx + 4)
+    # Train points (lighter)
+    ax_sc.scatter(r['y_train'], r['y_pred_train'], s=18, alpha=0.3,
+                  color=colors[state], edgecolors='none', label='Train')
+    # Test points (darker)
+    ax_sc.scatter(r['y_test'], r['y_pred_test'], s=30, alpha=0.7,
+                  color=colors[state], edgecolors='k', linewidths=0.3, label='Test')
     mn, mx = r['y'].min() * 0.95, r['y'].max() * 1.05
-    ax_sc.plot([mn, mx], [mn, mx], 'k--', lw=1, alpha=0.5)
+    ax_sc.plot([mn, mx], [mn, mx], 'k--', lw=1, alpha=0.5, label='1:1 line')
     slope, intercept = np.polyfit(r['y_test'], r['y_pred_test'], 1)
     ax_sc.plot([mn, mx], [slope*mn+intercept, slope*mx+intercept],
-               'r-', lw=1.5, alpha=0.7, label=f'y={slope:.2f}x+{intercept:.0f}')
-    ax_sc.set_xlabel('Actual')
-    ax_sc.set_ylabel('Predicted')
-    ax_sc.set_title(f'{state} — Actual vs Predicted (Test)', fontsize=12)
-    ax_sc.legend(fontsize=8)
-    from scipy.stats import pearsonr
+               'r-', lw=1.5, alpha=0.7, label=f'Fit: y={slope:.2f}x+{intercept:.0f}')
+    ax_sc.set_xlabel('Actual Deaths', fontsize=10)
+    ax_sc.set_ylabel('Predicted Deaths', fontsize=10)
+    ax_sc.set_title(f'{state} — Actual vs Predicted', fontsize=12, fontweight='bold')
+    ax_sc.legend(fontsize=7, loc='upper left')
     pr, _ = pearsonr(r['y_test'], r['y_pred_test'])
-    ax_sc.text(0.03, 0.97, f"R²={r['r2_test']:.4f}\nr={pr:.4f}",
-               transform=ax_sc.transAxes, fontsize=9, va='top',
+    sr, _ = spearmanr(r['y_test'], r['y_pred_test'])
+    ax_sc.text(0.97, 0.03, f"R²={r['r2_test']:.4f}\nPearson r={pr:.4f}\nSpearman ρ={sr:.4f}",
+               transform=ax_sc.transAxes, fontsize=9, va='bottom', ha='right',
                fontfamily='monospace',
                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
 
-    # ── Row: Residual distribution ──
-    ax_rd = fig.add_subplot(5, 3, idx + 7)
+# ── Row 3: Residual distribution ──
+for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
+    r = results[state]
+    ax_rd = fig.add_subplot(8, 3, idx + 7)
     resid = r['y_test'] - r['y_pred_test']
     mu_r, sig_r = np.mean(resid), np.std(resid)
     ax_rd.hist(resid, bins=25, color=colors[state], edgecolor='white', alpha=0.8, density=True)
     xr = np.linspace(resid.min(), resid.max(), 100)
-    ax_rd.plot(xr, stats.norm.pdf(xr, mu_r, sig_r), 'r-', lw=2)
+    ax_rd.plot(xr, stats.norm.pdf(xr, mu_r, sig_r), 'r-', lw=2, label='Normal fit')
     ax_rd.axvline(0, color='k', ls='--', lw=1, alpha=0.5)
-    ax_rd.set_xlabel('Residual')
-    ax_rd.set_title(f'{state} — Residuals', fontsize=12)
-    ax_rd.text(0.97, 0.97, f"Mean={mu_r:.1f}\nStd={sig_r:.1f}",
-               transform=ax_rd.transAxes, fontsize=9, va='top', ha='right',
+    ax_rd.axvline(mu_r, color='red', ls=':', lw=1.5, label=f'Mean={mu_r:.1f}')
+    ax_rd.set_xlabel('Residual (Actual − Predicted)', fontsize=10)
+    ax_rd.set_ylabel('Density', fontsize=10)
+    ax_rd.set_title(f'{state} — Residual Distribution (Test)', fontsize=12, fontweight='bold')
+    ax_rd.legend(fontsize=7)
+    skew_r = stats.skew(resid)
+    kurt_r = stats.kurtosis(resid)
+    medae = np.median(np.abs(resid))
+    max_err = np.max(np.abs(resid))
+    ax_rd.text(0.97, 0.97,
+               f"Mean={mu_r:.1f}\nStd={sig_r:.1f}\nSkew={skew_r:.3f}\nKurtosis={kurt_r:.3f}\n"
+               f"Median AE={medae:.1f}\nMax |err|={max_err:.0f}",
+               transform=ax_rd.transAxes, fontsize=8, va='top', ha='right',
                fontfamily='monospace',
                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
 
-# ── Row 4: Temperature-Mortality curve per state ──
+# ── Row 4: Residuals vs Predicted (heteroscedasticity check) ──
 for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
-    ax_tm = fig.add_subplot(5, 3, idx + 10)
+    r = results[state]
+    ax_hc = fig.add_subplot(8, 3, idx + 10)
+    resid_test = r['y_test'] - r['y_pred_test']
+    sig_r = np.std(resid_test)
+    ax_hc.scatter(r['y_pred_test'], resid_test, s=25, alpha=0.6,
+                  color=colors[state], edgecolors='none')
+    ax_hc.axhline(0, color='k', ls='--', lw=1)
+    ax_hc.axhline(2*sig_r, color='red', ls=':', lw=1, alpha=0.6, label=f'+2σ ({2*sig_r:.0f})')
+    ax_hc.axhline(-2*sig_r, color='red', ls=':', lw=1, alpha=0.6, label=f'−2σ ({-2*sig_r:.0f})')
+    # LOWESS-like trend via moving average
+    sort_idx = np.argsort(r['y_pred_test'])
+    pred_sorted = r['y_pred_test'][sort_idx]
+    resid_sorted = resid_test[sort_idx]
+    win = max(len(resid_sorted) // 10, 3)
+    resid_smooth = pd.Series(resid_sorted).rolling(win, center=True, min_periods=1).mean().values
+    ax_hc.plot(pred_sorted, resid_smooth, 'r-', lw=2, alpha=0.7, label='Trend')
+    ax_hc.set_xlabel('Predicted Deaths', fontsize=10)
+    ax_hc.set_ylabel('Residual', fontsize=10)
+    ax_hc.set_title(f'{state} — Residuals vs Predicted', fontsize=12, fontweight='bold')
+    ax_hc.legend(fontsize=7)
+
+# ── Row 5: Temperature-Mortality curve per state ──
+for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
+    ax_tm = fig.add_subplot(8, 3, idx + 13)
     r = results[state]
     sdf = df[df['State'] == state]
     temp = sdf['Mean_Temp'].values
@@ -338,13 +382,13 @@ for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
     g['d_se'] = g['d_std'] / np.sqrt(g['d_n'])
     ax_tm.errorbar(g['t_mean'], g['d_mean'], yerr=g['d_se'] * 1.96,
                    fmt='o-', color=colors[state], markersize=5, capsize=3, lw=1.5)
-    ax_tm.set_xlabel('Mean Temperature (°C)')
-    ax_tm.set_ylabel('Deaths/week')
-    ax_tm.set_title(f'{state} — Temp-Mortality (±95% CI)', fontsize=12)
+    ax_tm.set_xlabel('Mean Temperature (°C)', fontsize=10)
+    ax_tm.set_ylabel('Deaths/week', fontsize=10)
+    ax_tm.set_title(f'{state} — Temp-Mortality (±95% CI)', fontsize=12, fontweight='bold')
 
-# ── Row 5: Residual ACF per state ──
+# ── Row 6: Residual ACF per state ──
 for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
-    ax_acf = fig.add_subplot(5, 3, idx + 13)
+    ax_acf = fig.add_subplot(8, 3, idx + 16)
     r = results[state]
     resid_all = r['y'] - r['y_pred_all']
     max_lags = 20
@@ -354,14 +398,105 @@ for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
             acf_vals.append(np.corrcoef(resid_all[:-lag], resid_all[lag:])[0, 1])
     ax_acf.bar(range(len(acf_vals)), acf_vals, color=colors[state], alpha=0.7)
     ci = 1.96 / np.sqrt(len(resid_all))
-    ax_acf.axhline(ci, color='gray', ls='--', lw=1, alpha=0.7)
+    ax_acf.axhline(ci, color='gray', ls='--', lw=1, alpha=0.7, label=f'95% CI (±{ci:.3f})')
     ax_acf.axhline(-ci, color='gray', ls='--', lw=1, alpha=0.7)
     ax_acf.axhline(0, color='k', lw=0.5)
-    ax_acf.set_xlabel('Lag (weeks)')
-    ax_acf.set_ylabel('ACF')
-    ax_acf.set_title(f'{state} — Residual ACF', fontsize=12)
+    # Durbin-Watson
+    dw = np.sum(np.diff(resid_all)**2) / np.sum(resid_all**2)
+    ax_acf.set_xlabel('Lag (weeks)', fontsize=10)
+    ax_acf.set_ylabel('ACF', fontsize=10)
+    ax_acf.set_title(f'{state} — Residual ACF (DW={dw:.3f})', fontsize=12, fontweight='bold')
+    ax_acf.legend(fontsize=7)
 
-plt.tight_layout(rect=[0, 0, 1, 0.98])
+# ── Row 7: Per-state performance comparison bar chart ──
+ax_bar = fig.add_subplot(8, 3, (19, 20))
+states_list = ['NSW', 'VIC', 'QLD']
+x_pos = np.arange(len(states_list))
+width = 0.18
+
+r2_vals = [results[s]['r2_test'] for s in states_list]
+mean_deaths = {s: np.mean(results[s]['y']) for s in states_list}
+mae_norm = [results[s]['mae_test'] / mean_deaths[s] * 100 for s in states_list]
+mape_vals = [results[s]['mape_test'] for s in states_list]
+r2_train_vals = [results[s]['r2_train'] for s in states_list]
+
+bars1 = ax_bar.bar(x_pos - 1.5*width, [v*100 for v in r2_train_vals], width,
+                   color=[colors[s] for s in states_list], alpha=0.5, label='R²(train) ×100')
+bars2 = ax_bar.bar(x_pos - 0.5*width, [v*100 for v in r2_vals], width,
+                   color=[colors[s] for s in states_list], alpha=0.9, label='R²(test) ×100')
+bars3 = ax_bar.bar(x_pos + 0.5*width, mae_norm, width,
+                   color=[colors[s] for s in states_list], alpha=0.5, hatch='//', label='MAE/Mean (%)')
+bars4 = ax_bar.bar(x_pos + 1.5*width, mape_vals, width,
+                   color=[colors[s] for s in states_list], alpha=0.5, hatch='..', label='MAPE (%)')
+
+for bars in [bars1, bars2, bars3, bars4]:
+    for bar in bars:
+        h = bar.get_height()
+        ax_bar.text(bar.get_x() + bar.get_width()/2., h + 0.3,
+                    f'{h:.1f}', ha='center', va='bottom', fontsize=8)
+
+ax_bar.axhline(80, color='red', ls='--', lw=1.5, alpha=0.6, label='R²=0.80 target')
+ax_bar.set_xticks(x_pos)
+ax_bar.set_xticklabels(states_list, fontsize=12, fontweight='bold')
+ax_bar.set_ylabel('Value (%)', fontsize=11)
+ax_bar.set_title('Per-State Performance Comparison', fontsize=13, fontweight='bold')
+ax_bar.legend(fontsize=8, loc='upper right')
+
+# ── Row 7 (right): Model Summary Table ──
+ax_tbl = fig.add_subplot(8, 3, 21)
+ax_tbl.axis('off')
+
+summary_text = (
+    f"{'═' * 48}\n"
+    f"  HYBRID GAM-DLNM v3 — MODEL REPORT\n"
+    f"  Per-State Independent Training\n"
+    f"{'═' * 48}\n\n"
+    f"  Architecture\n"
+    f"  {'─' * 44}\n"
+    f"  SplineTransformer + RidgeCV (penalized GAM)\n"
+    f"  Fourier (annual + semi-annual + quarterly)\n"
+    f"  DLNM weighted-lag B-spline basis\n"
+    f"  Features: {results['NSW']['X'].shape[1]} per state\n\n"
+    f"  {'State':<6} {'R²(tr)':>8} {'R²(te)':>8} {'MAE':>7} {'RMSE':>7} {'MAPE%':>7}\n"
+    f"  {'─' * 44}\n"
+)
+for s in states_list:
+    r = results[s]
+    flag = "✓" if r['r2_test'] >= 0.80 else "✗"
+    summary_text += (f"  {s:<6} {r['r2_train']:>8.4f} {r['r2_test']:>8.4f} "
+                     f"{r['mae_test']:>7.1f} {r['rmse_test']:>7.1f} {r['mape_test']:>6.2f}% {flag}\n")
+all_pass_flag = all(results[s]['r2_test'] >= 0.80 for s in states_list)
+summary_text += (
+    f"\n  Target R²≥0.80: {'✓ PASS' if all_pass_flag else '✗ FAIL'}\n"
+    f"{'═' * 48}"
+)
+ax_tbl.text(0.02, 0.98, summary_text, transform=ax_tbl.transAxes, fontsize=9.5,
+            va='top', fontfamily='monospace',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='lightyellow', alpha=0.95))
+
+# ── Row 8: Q-Q plots per state ──
+for idx, state in enumerate(['NSW', 'VIC', 'QLD']):
+    r = results[state]
+    ax_qq = fig.add_subplot(8, 3, idx + 22)
+    resid_test = r['y_test'] - r['y_pred_test']
+    sorted_resid = np.sort(resid_test)
+    n_pts = len(sorted_resid)
+    theoretical_q = stats.norm.ppf((np.arange(1, n_pts + 1) - 0.5) / n_pts)
+    ax_qq.scatter(theoretical_q, sorted_resid, s=20, alpha=0.7,
+                  color=colors[state], edgecolors='none')
+    # Reference line through Q1-Q3
+    q1_t, q3_t = stats.norm.ppf(0.25), stats.norm.ppf(0.75)
+    q1_r, q3_r = np.percentile(sorted_resid, 25), np.percentile(sorted_resid, 75)
+    slope_qq = (q3_r - q1_r) / (q3_t - q1_t)
+    intercept_qq = q1_r - slope_qq * q1_t
+    x_line = np.array([theoretical_q.min(), theoretical_q.max()])
+    ax_qq.plot(x_line, slope_qq * x_line + intercept_qq, 'r-', lw=1.5, alpha=0.8)
+    ax_qq.set_xlabel('Theoretical Quantiles', fontsize=10)
+    ax_qq.set_ylabel('Sample Quantiles', fontsize=10)
+    ax_qq.set_title(f'{state} — Q-Q Plot (Test Residuals)', fontsize=12, fontweight='bold')
+    ax_qq.grid(True, alpha=0.3)
+
+plt.tight_layout(rect=[0, 0, 1, 0.995])
 plt.savefig('hybrid_gam_dlnm_v3_perstate_results.png', dpi=150, bbox_inches='tight')
 print("  Saved: hybrid_gam_dlnm_v3_perstate_results.png")
 

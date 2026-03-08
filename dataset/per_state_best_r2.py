@@ -445,10 +445,22 @@ for state in states:
         print("no valid fit")
 
     # Pick best by test R²
-    for c in candidates:
-        if c[1] > best_r2_test:
-            best_r2_test = c[1]
-            best_info = make_info(*c)
+    if state == 'QLD':
+        # Force GAM for QLD — only consider GAM candidates
+        gam_candidates = [c for c in candidates if 'GAM' in c[4]]
+        for c in gam_candidates:
+            if c[1] > best_r2_test:
+                best_r2_test = c[1]
+                best_info = make_info(*c)
+        if best_info is None and gam_candidates:
+            # If all GAM have negative R², pick the least-bad one
+            best_c = max(gam_candidates, key=lambda x: x[1])
+            best_info = make_info(*best_c)
+    else:
+        for c in candidates:
+            if c[1] > best_r2_test:
+                best_r2_test = c[1]
+                best_info = make_info(*c)
 
     results[state] = best_info
     print(f"\n  ★ BEST {state}: {best_info['method']}")
@@ -468,7 +480,25 @@ for state in states:
     r = results[state]
     mae = mean_absolute_error(r['y_test'], r['pred_test'])
     rmse = np.sqrt(mean_squared_error(r['y_test'], r['pred_test']))
-    print(f"  {state:<8} {r['method']:<25} {r['r2_train']:>10.4f} {r['r2_test']:>10.4f} {mae:>10.1f} {rmse:>11.1f}")
+    note = ' (GAM forced)' if state == 'QLD' else ''
+    print(f"  {state:<8} {r['method']:<25} {r['r2_train']:>10.4f} {r['r2_test']:>10.4f} {mae:>10.1f} {rmse:>11.1f}{note}")
+
+# Overall aggregated results across all states
+all_y_test = np.concatenate([results[s]['y_test'] for s in states])
+all_pred_test = np.concatenate([results[s]['pred_test'] for s in states])
+all_y_train = np.concatenate([results[s]['y_train'] for s in states])
+all_pred_train = np.concatenate([results[s]['pred_train'] for s in states])
+
+overall_r2_train = r2_score(all_y_train, all_pred_train)
+overall_r2_test = r2_score(all_y_test, all_pred_test)
+overall_mae = mean_absolute_error(all_y_test, all_pred_test)
+overall_rmse = np.sqrt(mean_squared_error(all_y_test, all_pred_test))
+overall_mape = np.mean(np.abs((all_y_test - all_pred_test) / all_y_test)) * 100
+
+print(f"  {'─' * 76}")
+print(f"  {'OVERALL':<8} {'(aggregated)':<25} {overall_r2_train:>10.4f} {overall_r2_test:>10.4f} {overall_mae:>10.1f} {overall_rmse:>11.1f}")
+print(f"\n  Overall MAPE = {overall_mape:.2f}%")
+print(f"  Note: QLD uses GAM (forced), NSW/VIC use best R² model")
 
 # ============================================================
 # 6. VISUALIZATION
